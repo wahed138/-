@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة الإدارة - المشتركون الحاليون</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script>
+    // 🚨 لازم تحط الـ Configuration بتاعت مشروعك هنا يا سو
+    const firebaseConfig = {
+        apiKey: "AIzaSyBK6FZF3LW83qaUHBKYTfiVd2Ozrd1Rf2g",
+        authDomain: "thanawy-1383.firebaseapp.com",
+        databaseURL: "https://thanawy-1383-default-rtdb.firebaseio.com",
+        projectId: "thanawy-1383",
+        storageBucket: "thanawy-1383.firebasestorage.app",
+        messagingSenderId: "1026664406457",
+        appId: "1:1026664406457:web:87d71f7e41bef36ba0aa68",
+        measurementId: "G-J5R2EFM2D0"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+</script>
+
+<style>
+body { font-family:sans-serif; background:#111; color:white; padding:20px; }
+h1 { text-align:center; color:#00f5c4; }
+button { padding:8px 15px; margin:3px; cursor:pointer; border:none; border-radius:5px; font-weight:bold; }
+.disable { background:#ffb347; color:black; }
+.reactivate { background:#00c896; color:white; }
+.delete { background:#ff4f4f; color:white; }
+table { width:100%; border-collapse: collapse; margin-top:20px; background:#222; }
+th, td { padding:12px; border:1px solid #333; text-align:right; }
+th { background:#333; color:#00f5c4; }
+.status-msg { background:rgba(0,245,196,0.2); color:#00f5c4; padding:10px; border-radius:8px; margin-top:15px; }
+.active-status { color: #00c896; font-weight: bold; }
+.disabled-status { color: #ffb347; font-weight: bold; }
+.expired-status { color: #ff4f4f; font-weight: bold; }
+</style>
+</head>
+<body>
+  <h1>✅ المشتركون الحاليون</h1>
+
+  <div class="status-msg" id="statusEl" style="display: none;"></div>
+
+  <table id="studentsTable">
+    <thead>
+      <tr>
+        <th>كود التفعيل</th> 
+        <th>الاسم</th>
+        <th>الأجهزة (نشط/مسموح)</th>
+        <th>الزمن المتبقي</th>
+        <th>الحالة</th>
+        <th>الإجراء</th>
+      </tr>
+    </thead>
+    <tbody id="studentsBody">
+      <tr><td colspan="6">جاري تحميل المشتركين...</td></tr>
+    </tbody>
+  </table>
+
+  <script>
+    const studentsBody = document.getElementById("studentsBody");
+    const statusEl = document.getElementById("statusEl");
+
+    // =======================================================
+    // 💡 دالة حساب الزمن المتبقي
+    // =======================================================
+    function getRemainingTime(expiry) {
+        const now = Date.now();
+        const distance = expiry - now;
+
+        if (distance <= 0) return { days: 0, hours: 0, minutes: 0, expired: true };
+
+        const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+
+        return { days, hours, minutes, expired: false };
+    }
+
+    // =======================================================
+    // 💡 دالة تحميل الطلاب الموافق عليهم
+    // =======================================================
+    function loadStudents(){
+      statusEl.style.display = "none";
+      studentsBody.innerHTML="<tr><td colspan='6'>جاري تحميل المشتركين...</td></tr>";
+      
+      db.ref("approvedStudents").once("value")
+        .then(snapshot=>{
+          if(!snapshot.exists()){
+            studentsBody.innerHTML="<tr><td colspan='6'>لا يوجد مشتركون حاليًا.</td></tr>";
+            return;
+          }
+          
+          studentsBody.innerHTML = "";
+          snapshot.forEach(child=>{
+            const activationCode = child.key; 
+            const data = child.val();
+            const time = getRemainingTime(data.expiry);
+            
+            const activeDevices = Object.keys(data.currentDevices || {}).length;
+            const maxDevices = data.maxDevices || 1; // الافتراضي جهاز واحد
+
+            let statusText = 'غير معروف';
+            let statusClass = 'disabled-status';
+            
+            if (time.expired) {
+                statusText = '❌ منتهي';
+                statusClass = 'expired-status';
+            } else if (data.status === 'active') {
+                statusText = '✅ نشط';
+                statusClass = 'active-status';
+            } else if (data.status === 'disabled') {
+                statusText = '⚠️ معطل';
+                statusClass = 'disabled-status';
+            }
+            
+            const remainingTimeText = time.expired 
+                ? '0 يوم' 
+                : `${time.days} يوم و ${time.hours} س`;
+                
+            // زر التعطيل / إعادة التفعيل
+            const actionButton = data.status === 'active' && !time.expired
+                ? `<button class="disable" onclick="toggleActivation('${activationCode}', 'disabled', '${data.name}')">تعطيل</button>`
+                : `<button class="reactivate" onclick="toggleActivation('${activationCode}', 'active', '${data.name}')">إعادة تفعيل</button>`;
+            
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td><strong>${activationCode}</strong></td>
+              <td>${data.name || "-"}</td>
+              <td>${activeDevices} / ${maxDevices}</td>
+              <td>${remainingTimeText}</td>
+              <td><span class="${statusClass}">${statusText}</span></td>
+              <td>
+                ${actionButton}
+                <button class="delete" onclick="deleteStudent('${activationCode}','${data.name || ''}')">حذف</button>
+              </td>
+            `;
+            studentsBody.appendChild(tr);
+          });
+        });
+    }
+
+    // =======================================================
+    // 💡 دالة تفعيل/تعطيل الكود
+    // =======================================================
+    async function toggleActivation(activationCode, newStatus, name) {
+        const action = newStatus === 'active' ? 'إعادة تفعيل' : 'تعطيل';
+        if (!confirm(`هل أنت متأكد من ${action} اشتراك الطالب: ${name}؟`)) return;
+
+        try {
+            await db.ref(`approvedStudents/${activationCode}/status`).set(newStatus);
+            statusEl.textContent = `✅ تم ${action} ${name} بنجاح.`;
+            statusEl.style.display = "block";
+            loadStudents();
+        } catch (err) {
+            alert(`❌ حدث خطأ أثناء ${action}: ${err.message}`);
+            console.error(err);
+        }
+    }
+
+
+    // =======================================================
+    // 💡 دالة حذف الطالب
+    // =======================================================
+    function deleteStudent(activationCode,name){
+      if(confirm(`هل أنت متأكد من حذف كود التفعيل: ${activationCode} الخاص بـ ${name || 'هذا الطالب'}؟`)){
+        db.ref("approvedStudents/"+activationCode).remove()
+          .then(()=>{
+            statusEl.textContent=`✅ تم حذف كود ${activationCode} بنجاح.`;
+            statusEl.style.display = "block";
+            loadStudents();
+          })
+          .catch(err=>{
+            alert("❌ حدث خطأ أثناء الحذف: " + err.message);
+            console.error(err);
+          });
+      }
+    }
+    
+    // تحميل البيانات عند بدء التشغيل
+    loadStudents();
+
+    function downloadM4() {
+        const code = document.documentElement.outerHTML.replace(/<button onclick="downloadM4\(\)">تحميل كود m4\.html المُعدَّل كاملاً<\/button>/g, '');
+        const blob = new Blob([code], { type: 'text/html' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'm4.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }
+  </script>
+</body>
+</html>

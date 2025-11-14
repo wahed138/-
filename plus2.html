@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة الإدارة - الطلاب الموافق عليهم</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
+<style>
+body { font-family:sans-serif; background:#111; color:white; padding:20px; }
+h1 { text-align:center; color:#00f5c4; }
+form { max-width:400px; margin:0 auto; text-align:center; }
+input { width:100%; padding:10px; margin:8px 0; border-radius:6px; border:none; }
+button { padding:10px 20px; margin:8px; cursor:pointer; border:none; border-radius:5px; background:#00f5c4; color:#111; }
+.delete { background:#ff4f4f; color:white; }
+#studentsTable { width:100%; border-collapse: collapse; margin-top:20px; background:#222; display:none; }
+th, td { border:1px solid #444; padding:10px; text-align:center; font-size:14px; }
+#status { text-align:center; color:#00f5c4; margin:10px; }
+#error { text-align:center; color:#ff4f4f; margin:10px; }
+</style>
+</head>
+<body>
+
+<h1>لوحة الإدارة</h1>
+
+<!-- فورم تسجيل الدخول -->
+<div id="loginDiv">
+  <form id="adminLogin">
+    <input type="email" id="adminEmail" placeholder="البريد الإلكتروني" required>
+    <input type="password" id="adminPassword" placeholder="كلمة المرور" required>
+    <button type="submit">تسجيل الدخول</button>
+  </form>
+</div>
+
+<p id="status"></p>
+<p id="error"></p>
+
+<table id="studentsTable">
+  <thead>
+    <tr>
+      <th>الاسم</th>
+      <th>الهاتف</th>
+      <th>Device ID</th>
+      <th>موعد الانتهاء</th>
+      <th>إجراء</th>
+    </tr>
+  </thead>
+  <tbody id="studentsBody"></tbody>
+</table>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBK6FZF3LW83qaUHBKYTfiVd2Ozrd1Rf2g",
+  authDomain: "thanawy-1383.firebaseapp.com",
+  databaseURL: "https://thanawy-1383-default-rtdb.firebaseio.com",
+  projectId: "thanawy-1383",
+  storageBucket: "thanawy-1383.firebasestorage.app",
+  messagingSenderId: "1026664406457",
+  appId: "1:1026664406457:web:87d71f7e41bef36ba0aa68",
+  measurementId: "G-J5R2EFM2D0"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const auth = firebase.auth();
+
+const studentsBody = document.getElementById("studentsBody");
+const statusEl = document.getElementById("status");
+const errorEl = document.getElementById("error");
+const tableEl = document.getElementById("studentsTable");
+const loginDiv = document.getElementById("loginDiv");
+
+// UID الخاص بالأدمن (من Firebase Auth)
+const adminUid = "jstdqdiNVDb5erNApQuzo6d9RAe2";
+
+// تسجيل دخول الأدمن
+document.getElementById("adminLogin").addEventListener("submit", e=>{
+  e.preventDefault();
+  errorEl.textContent="";
+  statusEl.textContent="جارٍ تسجيل الدخول...";
+
+  const email = document.getElementById("adminEmail").value.trim();
+  const password = document.getElementById("adminPassword").value.trim();
+
+  auth.signInWithEmailAndPassword(email,password)
+    .then(res=>{
+      if(res.user.uid !== adminUid){
+        errorEl.textContent="❌ هذا الحساب ليس مسؤولاً.";
+        statusEl.textContent="";
+        auth.signOut();
+        return;
+      }
+      statusEl.textContent="✅ تم تسجيل الدخول كمسؤول.";
+      loginDiv.style.display="none";
+      tableEl.style.display="table";
+      loadStudents();
+    })
+    .catch(err=>{
+      errorEl.textContent="❌ فشل تسجيل الدخول. تحقق من البريد وكلمة المرور.";
+      console.error(err);
+    });
+});
+
+// تحميل الطلاب الموافق عليهم
+function loadStudents(){
+  studentsBody.innerHTML="";
+  db.ref("approvedStudents").once("value")
+    .then(snapshot=>{
+      if(!snapshot.exists()){
+        studentsBody.innerHTML="<tr><td colspan='5'>لا يوجد طلاب.</td></tr>";
+        return;
+      }
+      snapshot.forEach(child=>{
+        const uid = child.key;
+        const data = child.val();
+        const expiryDate = data.expiry ? new Date(data.expiry).toLocaleString("ar-EG") : "غير محدد";
+
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${data.name || "-"}</td>
+          <td>${data.phone || "-"}</td>
+          <td>${data.deviceId || "-"}</td>
+          <td>${expiryDate}</td>
+          <td><button class="delete" onclick="deleteStudent('${uid}','${data.name || ''}')">حذف</button></td>
+        `;
+        studentsBody.appendChild(tr);
+      });
+    })
+    .catch(err=>{
+      errorEl.textContent="❌ حدث خطأ أثناء تحميل البيانات.";
+      console.error(err);
+    });
+}
+
+// حذف طالب
+function deleteStudent(uid,name){
+  if(confirm(`هل أنت متأكد من حذف ${name || 'هذا الطالب'}؟`)){
+    db.ref("approvedStudents/"+uid).remove()
+      .then(()=>{
+        statusEl.textContent=`✅ تم حذف ${name || "الطالب"} بنجاح.`;
+        loadStudents();
+      })
+      .catch(err=>{
+        errorEl.textContent="❌ حدث خطأ أثناء الحذف.";
+        console.error(err);
+      });
+  }
+}
+</script>
+</body>
+</html>

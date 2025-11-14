@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>لوحة الإدارة - 1383</title>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
+<style>
+body { font-family:sans-serif; background:#111; color:white; padding:20px; }
+h1 { text-align:center; color:#00f5c4; }
+form { max-width:400px; margin:0 auto 20px auto; text-align:center; }
+input { width:100%; padding:10px; margin:8px 0; border-radius:6px; border:none; }
+button { padding:6px 12px; margin:2px; cursor:pointer; border:none; border-radius:5px; }
+.accept { background:#00f5c4; color:black; }
+.trial { background:#ffb347; color:black; }
+.reject { background:#ff4f4f; color:white; }
+table { width:100%; border-collapse: collapse; margin-top:20px; }
+th, td { border:1px solid #444; padding:10px; text-align:center; }
+#status { text-align:center; color:#00f5c4; margin-bottom:10px; }
+#error { text-align:center; color:#ff4f4f; margin-bottom:10px; }
+</style>
+</head>
+<body>
+
+<h1>لوحة الإدارة - الموافقة على الطلاب</h1>
+
+<div id="loginForm">
+  <form id="adminLogin">
+    <input type="email" id="adminEmail" placeholder="البريد الإلكتروني">
+    <input type="password" id="adminPassword" placeholder="كلمة المرور">
+    <button type="submit">تسجيل الدخول</button>
+  </form>
+</div>
+
+<p id="status"></p>
+<p id="error"></p>
+
+<table id="requestsTable" style="display:none;">
+  <tr><th>الاسم</th><th>الهاتف</th><th>أيام الاشتراك</th><th>دقايق التجربة</th><th>الإجراء</th></tr>
+  <tbody id="requests"></tbody>
+</table>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyBK6FZF3LW83qaUHBKYTfiVd2Ozrd1Rf2g",
+  authDomain: "thanawy-1383.firebaseapp.com",
+  databaseURL: "https://thanawy-1383-default-rtdb.firebaseio.com",
+  projectId: "thanawy-1383",
+  storageBucket: "thanawy-1383.firebasestorage.app",
+  messagingSenderId: "1026664406457",
+  appId: "1:1026664406457:web:87d71f7e41bef36ba0aa68",
+  measurementId: "G-J5R2EFM2D0"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const auth = firebase.auth();
+
+// uid الأدمن
+const adminUid = "jstdqdiNVDb5erNApQuzo6d9RAe2";
+
+const requestsTableEl = document.getElementById("requestsTable");
+const requestsBody = document.getElementById("requests");
+const statusEl = document.getElementById("status");
+const errorEl = document.getElementById("error");
+const loginFormDiv = document.getElementById("loginForm");
+
+// تسجيل دخول الأدمن
+document.getElementById("adminLogin").addEventListener("submit", e=>{
+  e.preventDefault();
+  errorEl.textContent = "";
+  statusEl.textContent = "جارٍ تسجيل الدخول...";
+  const email = document.getElementById("adminEmail").value.trim();
+  const password = document.getElementById("adminPassword").value.trim();
+
+  auth.signInWithEmailAndPassword(email,password)
+  .then(res=>{
+    if(res.user.uid !== adminUid){
+      errorEl.textContent="❌ هذا الحساب ليس مسؤولاً.";
+      auth.signOut();
+      return;
+    }
+    statusEl.textContent="✅ تم تسجيل الدخول كمسؤول.";
+    loginFormDiv.style.display="none";
+    requestsTableEl.style.display="table";
+    loadRequests();
+  })
+  .catch(err=>{
+    errorEl.textContent="❌ فشل تسجيل الدخول. تحقق من البريد وكلمة المرور.";
+    console.error(err);
+  });
+});
+
+// تحميل الطلبات
+function loadRequests(){
+  requestsBody.innerHTML="";
+  db.ref("pendingStudents").once("value")
+  .then(snapshot=>{
+    if(!snapshot.exists()){
+      requestsBody.innerHTML="<tr><td colspan='5'>لا توجد طلبات حالياً.</td></tr>";
+      return;
+    }
+    snapshot.forEach(child=>{
+      const key = child.key; 
+      const data = child.val();
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${data.name}</td>
+        <td>${data.phone}</td>
+        <td><input type="number" id="days_${key}" placeholder="أيام" style="width:70px;"></td>
+        <td><input type="number" id="minutes_${key}" placeholder="دقايق" style="width:70px;"></td>
+        <td>
+          <button class="accept" onclick="accept('${key}')">اشتراك</button>
+          <button class="trial" onclick="acceptTrial('${key}')">تجربة</button>
+          <button class="reject" onclick="reject('${key}')">رفض</button>
+        </td>
+      `;
+      requestsBody.appendChild(tr);
+    });
+  })
+  .catch(err=>{
+    errorEl.textContent="❌ حدث خطأ أثناء تحميل الطلبات.";
+    console.error(err);
+  });
+}
+
+// قبول كاشتراك (بالأيام)
+function accept(uid){
+  const days = parseInt(document.getElementById("days_" + uid).value) || 0;
+  if(days <= 0){
+    errorEl.textContent = "❌ برجاء إدخال عدد أيام صحيح.";
+    return;
+  }
+  const duration = days * 24 * 60 * 60 * 1000;
+
+  db.ref("pendingStudents/" + uid).once("value").then(snap=>{
+    const data = snap.val();
+    if(!data){
+      errorEl.textContent = "❌ لم يتم العثور على بيانات الطالب.";
+      return;
+    }
+    const approvedAt = Date.now();
+    const expiry = approvedAt + duration;
+
+    db.ref("approvedStudents/" + uid).set({
+      name: data.name,
+      phone: data.phone,
+      deviceId: uid,
+      approvedAt,
+      expiry,
+      trial: false
+    }).then(()=>{
+      db.ref("pendingStudents/" + uid).remove();
+      statusEl.textContent=`✅ تم الموافقة على ${data.name} لاشتراك ${days} يوم`;
+      loadRequests();
+    });
+  });
+}
+
+// قبول كتجربة (بالدقايق)
+function acceptTrial(uid){
+  const minutes = parseInt(document.getElementById("minutes_" + uid).value) || 0;
+  if(minutes <= 0){
+    errorEl.textContent = "❌ برجاء إدخال عدد دقائق صحيح.";
+    return;
+  }
+  const duration = minutes * 60 * 1000;
+
+  db.ref("pendingStudents/" + uid).once("value").then(snap=>{
+    const data = snap.val();
+    if(!data){
+      errorEl.textContent = "❌ لم يتم العثور على بيانات الطالب.";
+      return;
+    }
+    const approvedAt = Date.now();
+    const expiry = approvedAt + duration;
+
+    db.ref("approvedStudents/" + uid).set({
+      name: data.name,
+      phone: data.phone,
+      deviceId: uid,
+      approvedAt,
+      expiry,
+      trial: true
+    }).then(()=>{
+      db.ref("pendingStudents/" + uid).remove();
+      statusEl.textContent=`✅ تم إعطاء ${data.name} تجربة ${minutes} دقيقة`;
+      loadRequests();
+    });
+  });
+}
+
+// رفض الطلب
+function reject(uid){
+  db.ref("pendingStudents/" + uid).remove()
+  .then(()=>{
+    statusEl.textContent="✅ تم حذف الطلب.";
+    loadRequests();
+  })
+  .catch(err=>{
+    errorEl.textContent="❌ حدث خطأ أثناء حذف الطلب.";
+    console.error(err);
+  });
+}
+</script>
+</body>
+</html>
