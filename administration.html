@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة الإدارة - التحكم بالأكواد | شاتي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+    
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js';
+        import { getDatabase, ref, onValue, update, remove, get } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-database.js';
+        
+        // 🚨 Configuration - لازم تحط الـ Configuration بتاعت مشروعك هنا
+        const firebaseConfig = {
+          apiKey: "AIzaSyBK6FZF3LW83qaUHBKYTfiVd2Ozrd1Rf2g",
+          authDomain: "thanawy-1383.firebaseapp.com",
+          databaseURL: "https://thanawy-1383-default-rtdb.firebaseio.com",
+          projectId: "thanawy-1383",
+          storageBucket: "thanawy-1383.firebasestorage.app",
+          messagingSenderId: "1026664406457",
+          appId: "1:1026664406457:web:87d71f7e41bef36ba0aa68",
+          measurementId: "G-J5R2EFM2D0"
+        };
+        
+        // **********************************************
+        // 🚀 تهيئة Firebase (بدء سريع)
+        // **********************************************
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        
+        // تعريف الدوال المتاحة عالميًا (Global Functions)
+        window.db = db;
+        window.get = get;
+        window.ref = ref;
+        window.update = update;
+        window.remove = remove;
+        window.getUniqueActivationCode = getUniqueActivationCode;
+        window.addNewCode = addNewCode;
+        window.blockCode = blockCode;
+        window.deleteCode = deleteCode;
+        window.renewCode = renewCode;
+        window.filterCodes = filterCodes;
+        window.loadCodes = loadCodes;
+        window.displayAdminStats = displayAdminStats; 
+        
+        
+        const statusEl = document.getElementById('statusEl');
+        const activeCodesBody = document.getElementById('activeCodesBody');
+        const deactivatedCodesBody = document.getElementById('deactivatedCodesBody');
+        const adminStatsEl = document.getElementById('adminStats'); 
+        const adminRenewStatsEl = document.getElementById('adminRenewStats'); // 🆕 عنصر جديد
+        const adminTotalStatsEl = document.getElementById('adminTotalStats'); // 🆕 عنصر جديد
+
+        // **********************************************
+        // 🚨 الدوال الخاصة بتوليد الكود الفريد (6 أرقام)
+        // **********************************************
+
+        function generateRandom6DigitUID() {
+            const min = 100000;
+            const max = 999999;
+            return Math.floor(Math.random() * (max - min + 1) + min).toString();
+        }
+
+        
+        async function isUIDUsed(uid) {
+            try {
+                const approvedSnap = await get(ref(db, 'approvedStudents/' + uid)); 
+                const pendingSnap = await get(ref(db, 'pendingStudents/' + uid));
+                
+                return approvedSnap.exists() || pendingSnap.exists();
+            } catch (error) {
+                console.error("Firebase Check Error:", error);
+                window.showToast("❌ خطأ في الاتصال بالخادم أثناء التحقق من الكود.", "error");
+                return false; 
+            }
+        }
+        
+        async function getUniqueActivationCode() {
+            let uid;
+            let isUsed = true;
+            let attempts = 0;
+            const maxAttempts = 50; 
+            
+            statusEl.textContent = '⏳ جاري توليد كود تفعيل فريد...';
+
+            while (isUsed && attempts < maxAttempts) {
+                uid = generateRandom6DigitUID();
+                isUsed = await isUIDUsed(uid); 
+                attempts++;
+            }
+            
+            if(attempts >= maxAttempts && isUsed) {
+                throw new Error("❌ فشل توليد كود فريد بعد محاولات عديدة.");
+            }
+            return uid;
+        }
+
+        // **********************************************
+        // 🚨 إدارة الأكواد المفعلة (Active Codes)
+        // **********************************************
+        async function addNewCode(isTrial = false) { 
+            const name = document.getElementById('newStudentName').value.trim();
+            const durationDays = isTrial ? (1 / 24) : parseInt(document.getElementById('newDuration').value);
+    
+            if (!name) {
+                window.showToast("❌ برجاء إدخال اسم الطالب.", "error");
+                return;
+            }
+            if (!isTrial && (durationDays < 1 || durationDays > 300)) {
+                window.showToast("❌ برجاء إدخال مدة بين 1 و 300 يوم لكود عادي.", "error");
+                return;
+            }
+
+            const adminName = document.getElementById('addingAdminName').value.trim() || "غير معروف";
+    
+            try {
+                const newCode = await getUniqueActivationCode();
+        
+                const approvedAt = Date.now();
+                const expiry = approvedAt + (durationDays * 24 * 60 * 60 * 1000); 
+
+                await update(ref(db, 'approvedStudents/' + newCode), {
+                    name: name,
+                    admin: adminName, // 🔴 الأدمن الذي أضاف الكود جديدًا
+                    approvedAt: approvedAt, 
+                    expiry: expiry,
+                    deviceId: "",
+                    isBlocked: false,
+                    isExpired: false,
+                    deactivatedOn: null,
+                    isTrial: isTrial,
+                    renewAdmin: null // 🆕 تم إضافة الخاصية للتجديد
+                });
+
+                const msg = isTrial ? 
+                    `✅ تم إضافة كود تجربة (ساعة) جديد: ${newCode} للطالب: ${name}` :
+                    `✅ تم إضافة كود جديد: ${newCode} للطالب: ${name}`;
+
+                window.showToast(msg, "success");
+                document.getElementById('newStudentName').value = '';
+                document.getElementById('addingAdminName').value = ''; 
+                if(!isTrial) document.getElementById('newDuration').value = 30;
+                loadCodes(); 
+            } catch (error) {
+                window.showToast("❌ خطأ: " + error.message, "error");
+                console.error(error);
+            }
+        }
+        
+        // **********************************************
+        // 🚨 وظائف الإدارة على الأكواد
+        // **********************************************
+
+        // 1. تعطيل (Block)
+        function blockCode(uid, name) {
+            if(confirm(`هل أنت متأكد من تعطيل كود الطالب ${name} (${uid})؟`)){
+                update(ref(db, 'approvedStudents/' + uid), {
+                    isBlocked: true,
+                    deviceId: "",
+                    deactivatedOn: Date.now()
+                }).then(() => {
+                    window.showToast(`🛑 تم تعطيل كود ${uid}.`, "warn");
+                    loadCodes();
+                }).catch(e => window.showToast("❌ فشل التعطيل: " + e.message, "error"));
+            }
+        }
+
+        // 2. حذف (Delete)
+        function deleteCode(uid, name, listName) {
+            if(confirm(`هل أنت متأكد من حذف كود الطالب ${name} (${uid}) نهائيًا من قائمة ${listName}؟`)){
+                remove(ref(db, 'approvedStudents/' + uid)).then(() => {
+                    window.showToast(`🗑️ تم حذف الكود ${uid} نهائيًا.`, "error");
+                    loadCodes();
+                }).catch(e => window.showToast("❌ فشل الحذف: " + e.message, "error"));
+            }
+        }
+
+        // 3. تجديد/تفعيل (Renew/Activate) - 🆕 تم تعديلها لإضافة اسم الأدمن المُجدد
+        function renewCode(uid, name, durationInputId) {
+            const durationDays = parseInt(document.getElementById(durationInputId).value);
+
+            if (durationDays < 1 || durationDays > 300) {
+                window.showToast("❌ المدة يجب أن تكون بين 1 و 300 يوم.", "error");
+                return;
+            }
+            
+            const adminName = prompt(`برجاء إدخال اسم المشرف الذي يقوم بتجديد كود الطالب ${name} (${uid}):`);
+            
+            if (!adminName || adminName.trim() === "") {
+                window.showToast("❌ تم إلغاء التجديد. يجب إدخال اسم المشرف.", "error");
+                return;
+            }
+            
+            if(confirm(`هل أنت متأكد من تفعيل كود الطالب ${name} (${uid}) لمدة ${durationDays} يوم بواسطة ${adminName}?`)){
+                const approvedAt = Date.now();
+                const expiry = approvedAt + (durationDays * 24 * 60 * 60 * 1000); 
+
+                update(ref(db, 'approvedStudents/' + uid), {
+                    approvedAt: approvedAt,
+                    expiry: expiry,
+                    isBlocked: false,
+                    isExpired: false,
+                    deactivatedOn: null,
+                    deviceId: "",
+                    renewAdmin: adminName.trim() // 🆕 حفظ اسم الأدمن المُجدد
+                }).then(() => {
+                    window.showToast(`✅ تم تفعيل/تجديد الكود ${uid} لـ ${durationDays} يوم بواسطة ${adminName}.`, "success");
+                    loadCodes();
+                }).catch(e => window.showToast("❌ فشل التجديد: " + e.message, "error"));
+            }
+        }
+
+        // 🆕 دالة بسيطة لتحديد نوع الجهاز للعرض
+        function getDeviceType(deviceId) {
+            if (!deviceId || deviceId === "") return '⚠️ غير مُسجل';
+            const idLower = deviceId.toLowerCase();
+            if (idLower.includes('android') || idLower.includes('a_') || idLower.includes('mobile')) return '📱 Android';
+            if (idLower.includes('ios') || idLower.includes('i_') || idLower.includes('iphone')) return '📱 iPhone/iPad';
+            if (idLower.includes('windows') || idLower.includes('w_') || idLower.includes('desktop')) return '💻 Windows';
+            return '✅ جهاز مُسجل';
+        }
+
+
+        // **********************************************
+        // 🚨 وظيفة فلترة وعرض الأكواد بناءً على البحث
+        // **********************************************
+        function filterCodes() {
+            const searchActive = document.getElementById('searchActive').value.toLowerCase();
+            const searchDeactivated = document.getElementById('searchDeactivated').value.toLowerCase();
+
+            const activeRows = activeCodesBody.getElementsByTagName('tr');
+            for (let i = 0; i < activeRows.length; i++) {
+                const rowText = activeRows[i].textContent.toLowerCase(); 
+                
+                if (rowText.includes('جاري تحميل') || rowText.includes('لا يوجد')) continue; 
+
+                if (rowText.includes(searchActive)) {
+                    activeRows[i].style.display = ""; 
+                } else {
+                    activeRows[i].style.display = "none";
+                }
+            }
+
+            const deactivatedRows = deactivatedCodesBody.getElementsByTagName('tr');
+            for (let i = 0; i < deactivatedRows.length; i++) {
+                const rowText = deactivatedRows[i].textContent.toLowerCase();
+                
+                if (rowText.includes('جاري تحميل') || rowText.includes('لا يوجد')) continue;
+                
+                if (rowText.includes(searchDeactivated)) {
+                    deactivatedRows[i].style.display = ""; 
+                } else {
+                    deactivatedRows[i].style.display = "none"; 
+                }
+            }
+        }
+
+        // **********************************************
+        // 🆕 وظيفة عرض إحصائيات المشرفين - تم تحديثها
+        // **********************************************
+        function displayAdminStats(allCodesData) {
+            const newCodeCounts = {};
+            const renewCodeCounts = {};
+            const totalActivity = {};
+            
+            allCodesData.forEach(data => {
+                const newAdmin = (data.admin && data.admin.trim()) || "غير معروف";
+                const renewAdmin = (data.renewAdmin && data.renewAdmin.trim()) || "غير معروف";
+                
+                // 1. إحصائيات الإضافة الجديدة (New Codes) - بناءً على 'admin'
+                newCodeCounts[newAdmin] = (newCodeCounts[newAdmin] || 0) + 1;
+                
+                // 2. إحصائيات التجديد (Renewed Codes) - بناءً على 'renewAdmin'
+                // لا نحسب الكود كتجديد إذا كان 'admin' و 'renewAdmin' نفس القيمة (إلا لو كان تجديدًا فعليًا)
+                // الأكواد التي تم تجديدها هي التي بها قيمة في 'renewAdmin'
+                if (data.renewAdmin) { 
+                    renewCodeCounts[renewAdmin] = (renewCodeCounts[renewAdmin] || 0) + 1;
+                }
+            });
+
+            // 3. تجميع الإحصائيات الكلية (إضافة + تجديد)
+            const allAdmins = new Set([...Object.keys(newCodeCounts), ...Object.keys(renewCodeCounts)]);
+
+            allAdmins.forEach(admin => {
+                const newCount = newCodeCounts[admin] || 0;
+                const renewCount = renewCodeCounts[admin] || 0;
+                totalActivity[admin] = { new: newCount, renew: renewCount, total: newCount + renewCount };
+            });
+
+            // --- عرض إحصائيات الإضافة الجديدة ---
+            let newStatsHtml = '<h3>🌟 إحصائيات الأكواد المضافة **جديدًا**:</h3><ul>';
+            for (const admin in newCodeCounts) {
+                newStatsHtml += `<li><strong>${admin}</strong>: أضاف <strong>${newCodeCounts[admin]}</strong> كود جديد.</li>`;
+            }
+            newStatsHtml += '</ul>';
+            adminStatsEl.innerHTML = newStatsHtml;
+
+            // --- عرض إحصائيات التجديد/التفعيل ---
+            let renewStatsHtml = '<h3>🔄 إحصائيات الأكواد التي تم **تجديدها/تفعيلها**:</h3><ul>';
+            for (const admin in renewCodeCounts) {
+                renewStatsHtml += `<li><strong>${admin}</strong>: جدّد/فعّل <strong>${renewCodeCounts[admin]}</strong> كود.</li>`;
+            }
+            renewStatsHtml += '</ul>';
+            adminRenewStatsEl.innerHTML = renewStatsHtml;
+
+            // --- عرض إحصائيات النشاط الكلي ---
+            let totalStatsHtml = '<h3>📈 إجمالي نشاط المشرفين (إضافة + تجديد):</h3><ul>';
+            const sortedTotal = Object.entries(totalActivity).sort(([,a], [,b]) => b.total - a.total);
+            sortedTotal.forEach(([admin, counts]) => {
+                totalStatsHtml += `<li><strong>${admin}</strong>: إجمالي **${counts.total}** عملية (${counts.new} جديد + ${counts.renew} تجديد/تفعيل).</li>`;
+            });
+            totalStatsHtml += '</ul>';
+            adminTotalStatsEl.innerHTML = totalStatsHtml;
+        }
+
+
+        // **********************************************
+        // 🚨 وظيفة تحميل وعرض الأكواد في الجداول (ترتيب تنازلي)
+        // **********************************************
+        function loadCodes() {
+            activeCodesBody.innerHTML = `<tr><td colspan='8'>⏳ جاري تحميل الأكواد المفعلة...</td></tr>`;
+            deactivatedCodesBody.innerHTML = `<tr><td colspan='6'>⏳ جاري تحميل الأكواد غير المفعلة...</td></tr>`;
+            adminStatsEl.innerHTML = '<div>⏳ جاري حساب إحصائيات المشرفين...</div>'; 
+            adminRenewStatsEl.innerHTML = ''; // تفريغ العناصر الجديدة
+            adminTotalStatsEl.innerHTML = '';
+
+
+            const allCodesData = [];
+            const activeRows = [];
+            const deactivatedRows = [];
+            
+            const now = Date.now();
+
+            get(ref(db, "approvedStudents"))
+                .then(snapshot => {
+                    if (!snapshot.exists()) {
+                        activeCodesBody.innerHTML = `<tr><td colspan='8'>لا يوجد أكواد مفعلة.</td></tr>`;
+                        deactivatedCodesBody.innerHTML = `<tr><td colspan='6'>لا يوجد أكواد غير مفعلة.</td></tr>`;
+                        statusEl.textContent = `✅ تم التحميل بنجاح. لا توجد بيانات حاليًا.`;
+                        adminStatsEl.innerHTML = '<h3>🌟 إحصائيات المشرفين:</h3><p>لا توجد بيانات لحساب الإحصائيات.</p>'; 
+                        adminRenewStatsEl.innerHTML = '';
+                        adminTotalStatsEl.innerHTML = '';
+                        return;
+                    }
+
+                    // 1. تجميع البيانات أولاً ومعالجة انتهاء الصلاحية
+                    snapshot.forEach(child => {
+                        const uid = child.key;
+                        const data = child.val();
+                        
+                        const isExpired = data.expiry && data.expiry <= now;
+                        const isBlocked = data.isBlocked === true;
+
+                        if (isExpired && !isBlocked) {
+                            update(ref(db, 'approvedStudents/' + uid), {
+                                isExpired: true, 
+                                isBlocked: true,
+                                deviceId: "",
+                                deactivatedOn: now 
+                            });
+                            data.isExpired = true;
+                            data.isBlocked = true;
+                            data.deactivatedOn = now;
+                        }
+
+                        allCodesData.push({ uid, ...data });
+                    });
+                    
+                    // 2. ترتيب البيانات: الأحدث (ApprovedAt) أولاً (تنازلياً)
+                    allCodesData.sort((a, b) => (b.approvedAt || 0) - (a.approvedAt || 0));
+
+                    // 3. بناء صفوف الجدول بعد الترتيب
+                    allCodesData.forEach(data => {
+                        const uid = data.uid;
+                        const isExpired = data.isExpired;
+                        const isBlocked = data.isBlocked;
+                        
+                        let expiryDate = data.expiry ? new Date(data.expiry).toLocaleDateString("ar-EG") : "غير محدد";
+                        
+                        if (!isExpired && !isBlocked) { // كود مفعل
+                            const deviceStatus = getDeviceType(data.deviceId);
+                            const approvedDate = data.approvedAt ? new Date(data.approvedAt).toLocaleDateString("ar-EG") : "غير محدد";
+                            const durationDays = data.expiry ? Math.ceil((data.expiry - data.approvedAt) / (24 * 60 * 60 * 1000)) : '-';
+
+                            const rowContent = `
+                                <td>${data.name || "-"}</td>
+                                <td style="color:var(--primary); font-weight:700;">${uid}</td>
+                                <td>${deviceStatus}</td>
+                                <td>${durationDays} يوم</td> 
+                                <td>${approvedDate}</td> 
+                                <td>${expiryDate}</td>
+                                <td>${data.admin || "غير معروف"}</td> 
+                                <td class="action-cell">
+                                    <input type="number" id="renew_active_${uid}" min="1" max="300" value="30" class="duration-input" />
+                                    <button class="btn-primary" onclick="renewCode('${uid}','${data.name}','renew_active_${uid}')">🔄 تجديد</button>
+                                    <button class="btn-warn" onclick="blockCode('${uid}','${data.name}')">🚫 تعطيل</button>
+                                    <button class="btn-danger" onclick="deleteCode('${uid}','${data.name}', 'المفعلة')">🗑️ حذف</button>
+                                </td>
+                            `;
+                            activeRows.push(`<tr class="code-row">${rowContent}</tr>`);
+
+                        } else {
+                            // 🔴 كود غير مفعل (Deactivated/Expired)
+                            let deactivatedDate = data.deactivatedOn ? new Date(data.deactivatedOn).toLocaleDateString("ar-EG") : "غير محدد";
+                            let statusText;
+
+                            if (isBlocked && !isExpired) statusText = 'مُعطّل يدويًا';
+                            else if (isExpired && data.deactivatedOn) statusText = 'انتهت صلاحيته تلقائيًا'; 
+                            else if (isExpired) statusText = 'انتهت صلاحيته';
+                            else statusText = 'غير نشط';
+                            
+                            // 🆕 إضافة اسم المشرف الذي قام بالتجديد سابقاً (إن وجد)
+                            const lastRenewAdmin = data.renewAdmin ? `(${data.renewAdmin})` : ''; 
+
+                            const rowContent = `
+                                <td>${data.name || "-"}</td>
+                                <td style="color:var(--error); font-weight:700;">${uid}</td>
+                                <td><span style="color:${isBlocked ? 'var(--warn)' : 'var(--error)'};">${statusText} ${lastRenewAdmin}</span></td>
+                                <td>${deactivatedDate}</td> 
+                                <td>
+                                    <input type="number" id="renew_deactive_${uid}" min="1" max="300" value="30" class="duration-input" />
+                                </td>
+                                <td class="action-cell">
+                                    <button class="btn-primary" onclick="renewCode('${uid}','${data.name}','renew_deactive_${uid}')">✅ تفعيل/تجديد</button>
+                                    <button class="btn-danger" onclick="deleteCode('${uid}','${data.name}', 'غير المفعلة')">🗑️ حذف</button>
+                                </td>
+                            `;
+                            deactivatedRows.push(`<tr class="code-row">${rowContent}</tr>`);
+                        }
+                    });
+
+                    activeCodesBody.innerHTML = activeRows.join('') || `<tr><td colspan='8'>لا يوجد أكواد مفعلة.</td></tr>`;
+                    deactivatedCodesBody.innerHTML = deactivatedRows.join('') || `<tr><td colspan='6'>لا يوجد أكواد غير مفعلة.</td></tr>`;
+                    statusEl.textContent = `✅ تم تحميل ${activeRows.length} كود مفعل و ${deactivatedRows.length} كود غير مفعل.`;
+                    
+                    displayAdminStats(allCodesData); // 🆕 استدعاء دالة الإحصائيات
+                    filterCodes();
+                })
+                .catch(err => {
+                    if (err.code && err.code.includes("permission-denied")) {
+                        statusEl.textContent = "❌ خطأ في قواعد أمان Firebase. تحقق من إذن القراءة للمسار (approvedStudents).";
+                    } else {
+                        statusEl.textContent = "❌ حدث خطأ أثناء تحميل البيانات: " + err.message;
+                    }
+                    activeCodesBody.innerHTML = `<tr><td colspan='8'>❌ فشل التحميل</td></tr>`;
+                    deactivatedCodesBody.innerHTML = `<tr><td colspan='6'>❌ فشل التحميل</td></tr>`;
+                    console.error("Firebase Load Error:", err); 
+                });
+        }
+        
+        // **********************************************
+        // 🚨 دالة التوست (Toast Function)
+        // **********************************************
+        function showToast(message, type = "info") {
+            const toastContainer = document.getElementById('toast-container');
+            const toast = document.createElement("div");
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(10px)';
+                setTimeout(() => toast.remove(), 500); 
+            }, 3000);
+
+            toastContainer.appendChild(toast);
+        }
+        window.showToast = showToast; // جعلها متاحة عالميًا
+
+        
+        // 🚀 ابدأ التحميل
+        loadCodes();
+    </script>
+</head>
+<body>
+    <h1>🔑 لوحة إدارة أكواد التفعيل والأمان</h1>
+
+    <div id="statusEl">✅ جاري تحميل البيانات...</div>
+    <div id="toast-container"></div>
+
+    <div class="container-grid">
+        <div class="admin-section" id="activeCodesSection">
+            <h2>الأكواد المفعلة حاليًا</h2>
+            <input type="text" id="searchActive" 
+           placeholder="🔍 بحث بالاسم أو بالكود..." 
+           onkeyup="filterCodes()" 
+           style="margin-bottom:15px; width: 100%;">
+            <div class="form-inline">
+                <input type="text" id="newStudentName" placeholder="اسم الطالب" required>
+                <input type="text" id="addingAdminName" placeholder="اسم الأدمن المُضيف" required> 
+                <input type="number" id="newDuration" placeholder="المدة (يوم)" min="1" max="300" value="30" required style="max-width: 80px;">
+                <button class="btn-primary" onclick="addNewCode()">➕ إضافة كود جديد</button>
+                <button class="btn-warn" onclick="addNewCode(true)">⏱️ كود تجربة (ساعة)</button>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                    <th>الاسم</th>
+                    <th>كود التفعيل</th>
+                    <th>نوع الجهاز</th> 
+                    <th>المدة (يوم)</th>       
+                    <th>تاريخ التفعيل</th>   
+                    <th>تاريخ الانتهاء</th>
+                    <th>الأدمن المُضيف</th>   
+                    <th class="action-cell">الإجراء</th>
+                </tr>
+            </thead>
+            <tbody id="activeCodesBody">
+                <tr><td colspan='8'>جاري تحميل الأكواد...</td></tr> 
+            </tbody>
+        </table>
+        </div>
+
+        <div class="admin-section" id="deactivatedCodesSection">
+            <h2>الأكواد غير المفعلة / المعطلة</h2>
+            <input type="text" id="searchDeactivated" 
+           placeholder="🔍 بحث بالاسم أو بالكود..." 
+           onkeyup="filterCodes()" 
+           style="margin-bottom:15px; width: 100%;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>الاسم</th>
+                        <th>كود التفعيل</th>
+                        <th>الحالة</th>
+                        <th>تاريخ التعطيل/الانتهاء</th>     
+                        <th>تحديد المدة (يوم)</th>
+                        <th class="action-cell">الإجراء</th>
+                    </tr>
+                </thead>
+                <tbody id="deactivatedCodesBody">
+                    <tr><td colspan='6'>جاري تحميل الأكواد...</td></tr> 
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="container-grid" style="grid-template-columns: 1fr 1fr; margin-top: 20px;">
+        <div id="adminStats" class="admin-stats-section admin-section">
+            <div>⏳ جاري حساب إحصائيات الإضافة الجديدة...</div>
+        </div>
+        
+        <div id="adminRenewStats" class="admin-stats-section admin-section">
+            <div>⏳ جاري حساب إحصائيات التجديد/التفعيل...</div>
+        </div>
+    </div>
+
+    <div id="adminTotalStats" class="admin-stats-section admin-section" style="grid-column: 1 / -1; margin-top: 15px; max-width: 1400px; margin: 15px auto;">
+        <div>⏳ جاري حساب إجمالي نشاط المشرفين...</div>
+    </div>
+    
+<style>
+/* 🎨 الألوان الأساسية */
+:root {
+    --primary: #00F57C; /* أخضر ساطع */
+    --secondary: #FFD700; /* أصفر ذهبي */
+    --bg-dark: #121212;
+    --card-dark: #1e1e1e;
+    --text-light: #f5f5f5;
+    --error: #FF4F4F;
+    --warn: #ffb347;
+    --hover-dark: #2a2a2a; 
+}
+
+body { 
+    font-family: 'Cairo', sans-serif; 
+    background: var(--bg-dark); 
+    color: var(--text-light); 
+    padding: 10px; 
+    text-align: right;
+}
+h1 { text-align:center; color:var(--primary); margin-bottom: 20px; font-weight: 700; }
+
+.container-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px; 
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.admin-section {
+    background: var(--card-dark);
+    padding: 15px;
+    border-radius: 15px;
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.5); 
+    overflow-x: auto; 
+    animation: fadeIn 0.8s ease-out; 
+}
+.admin-section h2 { 
+    color: var(--secondary); 
+    margin-bottom: 15px;
+    border-bottom: 2px solid rgba(255, 215, 0, 0.2);
+    padding-bottom: 10px;
+    text-align: right; /* محاذاة العنوان لليمين */
+}
+
+/* 🏷️ ستايل الأزرار */
+button { 
+    padding: 7px 10px; 
+    margin: 3px;
+    cursor: pointer; 
+    border: none; 
+    border-radius: 8px; 
+    font-weight: 700;
+    transition: 0.3s;
+    font-family: 'Cairo', sans-serif; 
+    white-space: nowrap; 
+    flex-grow: 1; 
+    font-size: 13px; 
+}
+.btn-primary { background: var(--primary); color: var(--bg-dark); }
+.btn-danger { background: var(--error); color: var(--text-light); }
+.btn-warn { background: var(--warn); color: var(--bg-dark); }
+.btn-primary:hover, .btn-danger:hover, .btn-warn:hover { 
+    opacity: 0.9; 
+    transform: translateY(-1px) scale(1.01); 
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* 📊 ستايل الجداول */
+table { 
+    width: 100%; 
+    min-width: 700px; 
+    border-collapse: collapse; 
+    margin-top:15px; 
+    font-size: 13px; 
+    text-align: right; 
+}
+th, td { 
+    padding: 8px 5px; 
+    text-align: right; 
+    border-bottom: 1px solid #333; 
+    vertical-align: middle; 
+}
+th { background: #333; color: var(--primary); font-weight: 700; }
+tr:hover { background: var(--hover-dark); }
+.code-row { animation: slideIn 0.5s ease-out; }
+
+/* 📝 ستايل الفورم والإدخال */
+input[type="text"], input[type="number"], select {
+    padding: 8px; 
+    margin: 5px 0;
+    border-radius: 8px;
+    border: 1px solid #555;
+    background: #333;
+    color: var(--text-light);
+    width: 100%;
+    transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+/* تعديل ترتيب عناصر الإضافة في الأعلى لضغطها */
+.form-inline {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+.form-inline > * { 
+    flex-grow: 1; 
+    min-width: 100px; 
+}
+.form-inline input[type="number"] {
+    max-width: 80px; 
+    flex-grow: 0;
+}
+.form-inline button { 
+    flex-grow: 0; 
+    padding: 8px 10px;
+}
+
+
+/* تعديل خلايا الإجراءات والأزرار */
+.action-cell { 
+    width: 170px; 
+    min-width: 170px; 
+    display: flex; 
+    flex-wrap: wrap; 
+    gap: 3px; 
+    justify-content: flex-end; 
+    align-items: center;
+}
+.action-cell input {
+    flex-grow: 1; 
+    max-width: 50px; 
+    text-align: center;
+    padding: 4px;
+}
+.action-cell button {
+    flex-grow: 1; 
+    min-width: 50px; 
+    margin: 0;
+}
+
+.duration-input { 
+    max-width: 60px !important; 
+    margin: 0 !important; 
+    padding: 4px !important;
+}
+
+/* تخصيص عرض بعض الأعمدة لضبط الجدول */
+#activeCodesSection table th:nth-child(1), 
+#activeCodesSection table td:nth-child(1) { width: 15%; min-width: 80px; } 
+#activeCodesSection table th:nth-child(2), 
+#activeCodesSection table td:nth-child(2) { width: 15%; min-width: 90px; } 
+#activeCodesSection table th:nth-child(4), 
+#activeCodesSection table td:nth-child(4) { width: 7%; min-width: 50px; } 
+#activeCodesSection table th:nth-child(8), 
+#activeCodesSection table td:nth-child(8) { width: 25%; min-width: 170px; } 
+
+
+/* ستايل جديد لقسم إحصائيات المشرفين */
+.admin-stats-section {
+    padding: 20px;
+    text-align: right;
+}
+.admin-stats-section h3 {
+    color: var(--primary);
+    border-bottom: 1px solid #333;
+    padding-bottom: 10px;
+    margin-bottom: 15px;
+    text-align: right;
+}
+.admin-stats-section ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    justify-content: flex-start;
+}
+.admin-stats-section li {
+    background: #333;
+    padding: 10px 15px;
+    border-radius: 8px;
+    font-size: 14px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5);
+    transition: background 0.3s;
+}
+.admin-stats-section li:hover {
+    background: var(--hover-dark);
+}
+.admin-stats-section li strong:first-child {
+    color: var(--secondary);
+}
+.admin-stats-section li strong:last-child {
+    color: var(--primary);
+    font-size: 15px;
+}
+
+
+/* ستايل التوست */
+#toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 10000;
+}
+.toast {
+    padding: 12px 20px;
+    border-radius: 10px;
+    margin-top: 10px;
+    font-weight: 700;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    animation: toastIn 0.5s forwards;
+    transition: opacity 0.5s, transform 0.5s;
+    min-width: 200px;
+    text-align: right;
+}
+.toast-success { background: var(--primary); color: var(--bg-dark); }
+.toast-error { background: var(--error); color: var(--text-light); }
+.toast-warn { background: var(--warn); color: var(--bg-dark); }
+
+
+/* Media Query لتحسين العرض على الشاشات الصغيرة */
+@media (max-width: 1200px) {
+    .container-grid {
+        grid-template-columns: 1fr; /* عمود واحد */
+    }
+}
+@media (max-width: 768px) {
+    body { padding: 5px; }
+    .admin-section { padding: 10px; }
+    
+    table { min-width: 600px; } /* ضمان الحد الأدنى للعرض على الموبايل */
+
+    .form-inline { 
+        flex-direction: row; 
+        flex-wrap: wrap; 
+    }
+    .form-inline input[type="text"] { min-width: 45%; }
+    .form-inline input[type="number"] { max-width: 60px; }
+}
+    </style>
+</body>
+</html>
