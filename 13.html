@@ -7,16 +7,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
     <script>
         // التحقق من الـ SessionStorage
-        if (sessionStorage.getItem('isAdminLoggedIn') !== 'true') {
+        //if (sessionStorage.getItem('isAdminLoggedIn') !== 'true') {
             // لو مش مسجل دخول، طلعه على صفحة اللوجين
-            window.location.href = "index.html"; 
+           // window.location.href = "index.html"; 
             
             // عشان نضمن أن مفيش أي كود تاني هيتنفذ بعد الري دايركت
-            throw new Error("Unauthorized Access Attempt"); 
-        }
+            //throw new Error("Unauthorized Access Attempt"); 
+        //}
         
         // حفظ الـ UID بتاع الأدمن في متغير عالمي عشان نستخدمه تحت
-        window.currentAdminUser = sessionStorage.getItem('adminUser');
+       // window.currentAdminUser = sessionStorage.getItem('adminUser');
         
     </script>
     <script type="module">
