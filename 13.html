@@ -22,7 +22,8 @@
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js';
         import { getDatabase, ref, onValue, update, remove, get } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-database.js';
-        
+        // 🆕 لازم تضيفي الـAuth عشان الـToken بتاعك يتبعت مع كل عملية Database
+        import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.1.0/firebase-auth.js';
         // 🚨 Configuration - لازم تحط الـ Configuration بتاعت مشروعك هنا
         const firebaseConfig = {
           apiKey: "AIzaSyBK6FZF3LW83qaUHBKYTfiVd2Ozrd1Rf2g",
@@ -38,9 +39,14 @@
         // **********************************************
         // 🚀 تهيئة Firebase (بدء سريع)
         // **********************************************
+        // **********************************************
+// 🚀 تهيئة Firebase
+// **********************************************
         const app = initializeApp(firebaseConfig);
         const db = getDatabase(app);
-        
+// 🆕 تهيئة الـAuth Module
+        const auth = getAuth(app); 
+// ...
         // تعريف الدوال المتاحة عالميًا (Global Functions)
         window.db = db;
         window.get = get;
