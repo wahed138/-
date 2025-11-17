@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>تسجيل الدخول - لوحة الإدارة | شاتي</title>
+    <title>تسجيل الدخول - لوحة الإدار</title>
     <style>
         /* 🎨 الألوان الأساسية - نفس الألوان اللي عندك */
         :root {
@@ -86,39 +86,71 @@
         
         <div id="error-message"></div>
     </div>
-
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
     <script>
-        // 🚨 قائمة الأدمن والباسورد (دي اللي بتتحقق منها)
-        // **غيري الأسماء والباسوردات دي بأي حاجة عشان الأمان!**
-        const ADMINS = [
-            { username: "1383", password: "quads1383" },
-            //{ username: "YourName", password: "AnotherSecret" }
-            // تقدري تضيفي أدمنز تانيين هنا
+        // -------------------------------------------------------------------
+        // 🚨 مهم جداً: الإعدادات دي بتجيبيها من إعدادات مشروعك في Firebase (Web App)
+        // -------------------------------------------------------------------
+        // 🚨 Configuration - لازم تحط الـ Configuration بتاعت مشروعك هنا
+        const firebaseConfig = {
+          apiKey: "AIzaSyBK6FZF3LW83qaUHBKYTfiVd2Ozrd1Rf2g",
+          authDomain: "thanawy-1383.firebaseapp.com",
+          databaseURL: "https://thanawy-1383-default-rtdb.firebaseio.com",
+          projectId: "thanawy-1383",
+          storageBucket: "thanawy-1383.firebasestorage.app",
+          messagingSenderId: "1026664406457",
+          appId: "1:1026664406457:web:87d71f7e41bef36ba0aa68",
+          measurementId: "G-J5R2EFM2D0"
+        };
+        // تهيئة Firebase
+        const app = firebase.initializeApp(firebaseConfig);
+        const auth = app.auth();
+        
+        // 🚨 قائمة الـ UIDs المسموح لهم بالدخول
+        // هاتي الـ UID بتاع كل أدمن من Firebase Users وحطيه هنا بين علامات تنصيص
+        const ALLOWED_ADMIN_UIDS = [
+            "EtOjRR6wSvYegwnZhX9rsUsyfiq1", 
+            "tITSjs7rlUczt0rALrVl4WrIqLb2", 
+            "jstdqdiNVDb5erNApQuzo6d9RAe2",
+            "ZBtFKQsm1KgiO4zn1zvVXBtTGQp1"
         ];
+        // -------------------------------------------------------------------
 
-        document.getElementById('loginBtn').addEventListener('click', () => {
-            const usernameInput = document.getElementById('username').value.trim();
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            // ملاحظة: الـ Input بتاع اسم المستخدم هيستخدم دلوقتي كـ بريد إلكتروني
+            const emailInput = document.getElementById('username').value.trim(); 
             const passwordInput = document.getElementById('password').value;
             const errorEl = document.getElementById('error-message');
             errorEl.textContent = "";
+            
+            if (!emailInput || !passwordInput) {
+                 errorEl.textContent = "دخل الإيميل والباسورد الأول يا سو.";
+                 return;
+            }
 
-            // التحقق من البيانات
-            const isAdmin = ADMINS.find(admin => 
-                admin.username === usernameInput && admin.password === passwordInput
-            );
-
-            if (isAdmin) {
-                // ✅ تسجيل الدخول بنجاح
-                // حفظ اسم الأدمن في الـ sessionStorage لإثبات دخوله
-                sessionStorage.setItem('isAdminLoggedIn', 'true');
-                sessionStorage.setItem('adminUser', usernameInput);
+            try {
+                // 1. تسجيل الدخول في Firebase
+                const userCredential = await auth.signInWithEmailAndPassword(emailInput, passwordInput);
+                const user = userCredential.user;
                 
-                // التوجيه للوحة الإدارة
-                window.location.href = "13.html";
+                // 2. التحقق من الصلاحية (هل الـ UID بتاعه موجود في قائمة الأدمن؟)
+                if (ALLOWED_ADMIN_UIDS.includes(user.uid)) {
+                    // ✅ مسموح بالدخول
+                    sessionStorage.setItem('isAdminLoggedIn', 'true');
+                    sessionStorage.setItem('adminUser', user.uid); 
+                    window.location.href = "13.html";
 
-            } else {
-                // ❌ فشل تسجيل الدخول
-                errorEl.textContent = "اسم المستخدم أو كلمة المرور غير صحيحين. حاول مرة أخرى.";
+                } else {
+                    // ❌ مش مسموح بالدخول
+                    await auth.signOut(); // نطلعه من Firebase احتياطي
+                    errorEl.textContent = "تم تسجيل الدخول، لكن هذا الحساب ليس له صلاحيات الأدمن.";
+                }
+
+            } catch (error) {
+                // ❌ الإيميل أو الباسورد غلط
+                console.error("Firebase Login Error:", error.message);
+                errorEl.textContent = "خطأ في تسجيل الدخول. الإيميل أو كلمة المرور غير صحيحين.";
             }
         });
 
