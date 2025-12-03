@@ -111,8 +111,7 @@
         // هاتي الـ UID بتاع كل أدمن من Firebase Users وحطيه هنا بين علامات تنصيص
         const ALLOWED_ADMIN_UIDS = [
             "EtOjRR6wSvYegwnZhX9rsUsyfiq1", 
-            "tITSjs7rlUczt0rALrVl4WrIqLb2", 
-            "jstdqdiNVDb5erNApQuzo6d9RAe2"
+            "tITSjs7rlUczt0rALrVl4WrIqLb2"
         ];
         // -------------------------------------------------------------------
 
@@ -124,7 +123,7 @@
             errorEl.textContent = "";
             
             if (!emailInput || !passwordInput) {
-                 errorEl.textContent = "دخل الإيميل والباسورد الأول يا سو.";
+                 errorEl.textContent="دخل الإيميل والباسورد الأول يحمار .";
                  return;
             }
 
@@ -143,13 +142,13 @@
                 } else {
                     // ❌ مش مسموح بالدخول
                     await auth.signOut(); // نطلعه من Firebase احتياطي
-                    errorEl.textContent = "تم تسجيل الدخول، لكن هذا الحساب ليس له صلاحيات الأدمن.";
+                    errorEl.textContent = "غور من هنا يشرقاوي يبن الكلب";
                 }
 
             } catch (error) {
                 // ❌ الإيميل أو الباسورد غلط
                 console.error("Firebase Login Error:", error.message);
-                errorEl.textContent = "خطأ في تسجيل الدخول. الإيميل أو كلمة المرور غير صحيحين.";
+                errorEl.textContent ="مع السلامة لما تفتكر الباسورد ابقى تعالى يجحش";
             }
         });
 
